@@ -2,7 +2,7 @@
 (function(){
 
 	//set global variables for the attribute array and which attribute is expressed 
-	var attrArray = ["Highschool Graduation Rate", "Highschool Graduate Median Earnings", "College Graduation Rate", "College Graduate Median Earnings", "Graduate Degree Rate", "Grad School Graduate Median Earnings"];
+	var attrArray = ["Highschool Graduation Rate", "Highschool Graduate Median Earnings", "College Degree Percentage", "College Graduate Median Earnings", "Graduate Degree Percentage", "Grad School Graduate Median Earnings"];
 	var expressed = attrArray[0];
 	
 		//chart frame dimensions
@@ -18,7 +18,7 @@
 	//create a scale to size bars proportionally to frame
 	var yScale = d3.scaleLinear()
 		.range([chartHeight, 0])
-		.domain([0, 105]);
+		.domain([0, 120]);
 
 	//begin script when window loads
 	window.onload = setMap();
@@ -39,7 +39,7 @@
 
 		//create Albers equal area conic projection centered on New Mexico
 		var projection = d3.geoAlbers()
-		.center([2, 34.25])
+		.center([2, 34.35])
 		.rotate([108.27, -0.00, 0])
 		.parallels([45, 60])
 		.scale(4400)
@@ -52,16 +52,21 @@
 		var promises = [];
 		promises.push(d3.csv("data/new_mexico_education.csv")); //load attributes from csv
 		promises.push(d3.json("data/us_states_limited.topojson")); //load background spatial data
+		//promises.push(d3.json("data/MEX_adm2.topojson"));
 		promises.push(d3.json("data/new_mexico_limited.topojson")); //load choropleth spatial data
 		Promise.all(promises).then(callback);
 
 		function callback(data){
 			csvData = data[0];
 			states = data[1];
+			//mexico = data[2];
 			newMexico = data[2];
 			
+			setGraticule(map,path);
+
 			//translate states & new mexico TopoJSON
 			var usStates = topojson.feature(states, states.objects.us_states_limited),
+			//var mexicoArea = topojson.feature(mexico, mexico.objects.MEX_adm2),
 			newMexico = topojson.feature(newMexico, newMexico.objects.new_mexico_limited).features;
 			
 			//add US states to map
@@ -69,6 +74,7 @@
 				.datum(usStates)
 				.attr("class", "states")
 				.attr("d", path);
+			
 			
 			newMexico = joinData(newMexico, csvData);
 			
@@ -78,12 +84,75 @@
 			
 			setChart(csvData, colorScale);
 			
-			createDropdown()
+			createDropdown(csvData);
 			
-			setLabel(expressed)
+			//createLegend(data);
+			
 		};
 	};
+/* 
+	function createLegend(data){
+		var colorClasses = [
+			"#ffffcc",
+			"#c2e699",
+			"#78c679",
+			"#31a354",
+			"#006837"
+		];
+		
+		var colors = d3.scale.quantize()
+			.range (colorClasses);
+		var legend = d3.select('#legend')
+			.append('ul')
+			.attr('class', 'list-inline');
+		var keys = legend.selectAll('li.key')
+			.data(colors.range());
 
+		keys.enter().append('li')
+			.attr('class', 'key')
+			.style('border-top-color', String)
+			.text(function(d) {
+				var r = colors.invertExtent(d);
+				return formats.percent(r[0]);
+			});
+	}; */
+	
+	//function to create color scale generator
+	function makeColorScale(data){
+		var colorClasses = [
+			"#ffffcc",
+			"#c2e699",
+			"#78c679",
+			"#31a354",
+			"#006837"
+		];
+
+		//create color scale generator
+		var colorScale = d3.scaleQuantile()
+			.range(colorClasses);
+
+		//build array of all values of the expressed attribute
+		var domainArray = [];
+		for (var i=0; i<data.length; i++){
+			var val = parseFloat(data[i][expressed]);
+			domainArray.push(val);
+		};
+		
+		//cluster data using ckmeans clustering algorithm to create natural breaks
+		var clusters = ss.ckmeans(domainArray, 5);
+		//reset domain array to cluster minimums
+		domainArray = clusters.map(function(d){
+			return d3.min(d);
+		});
+		//remove first value from domain array to create class breakpoints
+		domainArray.shift();
+
+		//assign array of last 4 cluster minimums as domain
+		colorScale.domain(domainArray);
+		
+		return colorScale;
+	};
+	
 	function setGraticule(map, path){
 		//create graticule generator
 		var graticule = d3.geoGraticule()
@@ -107,22 +176,20 @@
 	//function to join the data from csv file to the topojson files 
 	function joinData(newMexico, csvData){
 		//variables for data join
-		var attrArray = ["Highschool Graduation Rate", "Highschool Graduate Median Earnings", "College Graduation Rate", "College Graduate Median Earnings", "Graduate Degree Rate", "Grad School Graduate Median Earnings"];
+		var attrArray = ["Highschool Graduation Rate", "Highschool Graduate Median Earnings", "College Degree Percentage", "College Graduate Median Earnings", "Graduate Degree Percentage", "Grad School Graduate Median Earnings"];
 
 		//loop through csv to assign each set of csv attribute values to geojson region
 		for (var i=0; i<csvData.length; i++){
 			var csvCounties = csvData[i]; //the current region
-			var csvKey = csvCounties.CountyFP; //the CSV primary key
+			var csvKey = csvCounties.COUNTYFP; //the CSV primary key
 
 			//loop through geojson regions to find correct region
 			for (var a=0; a<newMexico.length; a++){
 
 				var geojsonProps = newMexico[a].properties; //the current region geojson properties
 				var geojsonKey = geojsonProps.COUNTYFP; //the geojson primary key
-
 				//where primary keys match, transfer csv data to geojson properties object
 				if (parseInt(geojsonKey) == parseInt(csvKey)){
-
 					//assign all attributes and values
 					attrArray.forEach(function(attr){
 						var val = parseFloat(csvCounties[attr]); //get csv attribute value
@@ -161,9 +228,26 @@
 	};
 	
 	//dropdown change listener handler
-	function changeAttribute(attribute, data){
+	function changeAttribute(attribute, csvData){
 		//change the expressed attribute
 		expressed = attribute;
+		
+		var maxattr = d3.max(csvData, function(d){return parseFloat(d[expressed]);});
+		
+		yScale = d3.scaleLinear()
+			.range([chartHeight, 0])
+			.domain([0, maxattr + (maxattr * 0.2)]);
+			
+		d3.select(".axis").remove();
+		//create vertical axis generator
+		var yAxis = d3.axisLeft()
+			.scale(yScale);
+
+		//place axis
+		var axis = d3.select('.chart').append("g")
+			.attr("class", "axis")
+			.attr("transform", translate)
+			.call(yAxis);
 
 		//recreate the color scale
 		var colorScale = makeColorScale(csvData);
@@ -212,42 +296,6 @@
 		var chartTitle = d3.select(".chartTitle")
 			.text(expressed + " in Each County");
 	};
-	
-	//function to create color scale generator
-	function makeColorScale(data){
-		var colorClasses = [
-			"#ffffcc",
-			"#c2e699",
-			"#78c679",
-			"#31a354",
-			"#006837"
-		];
-
-		//create color scale generator
-		var colorScale = d3.scaleQuantile()
-			.range(colorClasses);
-
-		//build array of all values of the expressed attribute
-		var domainArray = [];
-		for (var i=0; i<data.length; i++){
-			var val = parseFloat(data[i][expressed]);
-			domainArray.push(val);
-		};
-		
-		//cluster data using ckmeans clustering algorithm to create natural breaks
-		var clusters = ss.ckmeans(domainArray, 5);
-		//reset domain array to cluster minimums
-		domainArray = clusters.map(function(d){
-			return d3.min(d);
-		});
-		//remove first value from domain array to create class breakpoints
-		domainArray.shift();
-
-		//assign array of last 4 cluster minimums as domain
-		colorScale.domain(domainArray);
-		
-		return colorScale;
-	};
 
 	//function to test for data value and return color
 	function choropleth(props, colorScale){
@@ -268,7 +316,8 @@
 			.enter()
 			.append("path")
 			.attr("class", function(d){
-				return "counties " + d.properties.CountyFP;
+				var id = 'a' + parseFloat(d.properties.COUNTYFP).toString();
+				return "counties " + id;
 			})
 			.attr("d", path)
 			.style("fill", function(d){
@@ -282,8 +331,8 @@
 		})
 			.on("mousemove", moveLabel);
 			
-			var desc = newMexico.append("desc")
-				.text('{"stroke": "#000", "stroke-width": "0.5px"}');
+		var desc = newMexico.append("desc")
+			.text('{"stroke": "#000", "stroke-width": "0.5px"}');
 	};
 
 	//function to create coordinated bar chart
@@ -302,35 +351,39 @@
 			.attr("width", chartInnerWidth)
 			.attr("height", chartInnerHeight)
 			.attr("transform", translate);
-			
-		var charTitle = chart.append("text")
-			.attr("x", 50)
-			.attr("y", 30)
-			.attr("class", "chartTitle")
-			.text(expressed + " in Each County");
-							
-		 
+			 
 		 //set bars for each county
 		var bars = chart.selectAll(".bar")
 			.data(csvData)
 			.enter()
 			.append("rect")
 			.sort(function(a, b){
+				
 				return b[expressed]-a[expressed]
 			})
 			.attr("class", function(d){
-				return "bar " + d.adm1_code;
+				var id = 'a' + parseFloat(d.COUNTYFP).toString();
+				
+				return "bar " + id;
 			})
 			.attr("width", (chartInnerWidth-20) / csvData.length - 1)
-			.on("mouseover", function(d){
-				highlight(d)
-			})
-			//.on("mouseout", dehighlight(d.properties))
+		    .on("mouseover", function(d){
+				highlight(d);
+        })
+			.on("mouseout",function(d){
+				dehighlight(d);
+		})
 			.on("mousemove", moveLabel);
-		 var desc = bars.append("desc")
+		var desc = bars.append("desc")
 			.text('{"stroke": "none", "stroke-width": "0px"}');
-			
-			
+		
+		var charTitle = chart.append("text")
+			.attr("x", 50)
+			.attr("y", 30)
+			.attr("class", "chartTitle")
+			.text(expressed + " in Each County");		
+
+				
 		//create vertical axis generator
 		var yAxis = d3.axisLeft()
 			.scale(yScale);
@@ -347,8 +400,6 @@
 			.attr("width", chartInnerWidth)
 			.attr("height", chartInnerHeight)
 			.attr("transform", translate);
-			//set bar positions, heights, and colors
-		
 		
 		updateChart(bars, csvData.length, colorScale);
 	};
@@ -356,14 +407,20 @@
 	//function to highlight enumeration units and bars
 	function highlight(props){
 		//change stroke
-		var selected = d3.selectAll("." + props.COUNTYFP)
-			.style("stroke", "blue")
-			.style("stroke-width", "2");
-	};
+		var selected = d3.selectAll(".a" + parseFloat(props.COUNTYFP).toString())
+            .style("fill-opacity", "0.5")
+            .style("stroke", "#4F4F4F")
+            .style("stroke-width", "3");
+        
+        setLabel(props); //add label with mouseover
+    };
 	
 		//function to reset the element style on mouseout
 	function dehighlight(props){
-		var selected = d3.selectAll("." + props.COUNTYFP)
+		var selected = d3.selectAll(".a" + parseFloat(props.COUNTYFP).toString())
+	        .style("fill-opacity", function(){
+                return getStyle(this, "fill-opacity")
+            })		
 			.style("stroke", function(){
 				return getStyle(this, "stroke")
 			})
@@ -382,26 +439,71 @@
 		};
 		d3.select(".infolabel")
 			.remove();
+		
+		d3.select(".countylabel")
+			.remove();
 	};
 	
 		//function to create dynamic label
 	function setLabel(props){
-		//label content
-		var labelAttribute = "<h1>" + props[expressed] +
-			"</h1><b>" + expressed + "</b>";
-	console.log(props[expressed])
-		//create info label div
-		var infolabel = d3.select("body")
-			.append("div")
-			.attr("class", "infolabel")
-			.attr("id", props.COUNTYFP + "_label")
-			.html(labelAttribute);
-
-		var regionName = infolabel.append("div")
-			.attr("class", "labelname")
-			.html(props.name);
+		
+		if (props[expressed] < 100 && props[expressed] > 1) {	
+			//label content
+			var labelAttribute = "<h1>" + expressed + " in " + props.NAME + 
+				" County: </h1><b>" + props[expressed] + "%</b>";
+			//create info label div
+			var infolabel = d3.select("body")
+				.append("div")
+				.attr("class", "infolabel")
+				.attr("id", props.COUNTYFP + "_label")
+				.html(labelAttribute);
+			var countyName = infolabel.append("div")
+				.attr("class", "labelname")
+				.html(props.name);
+		} else if (props[expressed] > 100000) {
+			attrValue = props[expressed].toString()
+			//label content
+			var labelAttribute = "<h1>" + expressed + " in " + props.NAME + 
+				" County: </h1><b>" + "$" + attrValue[0]+attrValue[1]+attrValue[2] + "," + attrValue[3]+attrValue[4]+attrValue[5] + "</b>";
+			//create info label div
+			var infolabel = d3.select("body")
+				.append("div")
+				.attr("class", "infolabel")
+				.attr("id", props.COUNTYFP + "_label")
+				.html(labelAttribute);
+			var countyName = infolabel.append("div")
+				.attr("class", "labelname")
+				.html(props.name);
+		} else if (props[expressed] < 100000 && props[expressed] > 100) {
+			attrValue = props[expressed].toString()
+			//label content
+			var labelAttribute = "<h1>" + expressed + " in " + props.NAME + 
+				" County: </h1><b>" + "$" + attrValue[0]+attrValue[1] + "," + attrValue[2]+attrValue[3]+attrValue[4] + "</b>";
+			//create info label div
+			var infolabel = d3.select("body")
+				.append("div")
+				.attr("class", "infolabel")
+				.attr("id", props.COUNTYFP + "_label")
+				.html(labelAttribute);
+			var countyName = infolabel.append("div")
+				.attr("class", "labelname")
+				.html(props.name);	
+		} else {
+			attrValue = props[expressed].toString()
+			//label content
+			var labelAttribute = "<h1>" + expressed + " in " + props.NAME + 
+				" County: </h1><b>" + "$" + attrValue[0] + "</b>";
+			//create info label div
+			var infolabel = d3.select("body")
+				.append("div")
+				.attr("class", "infolabel")
+				.attr("id", props.COUNTYFP + "_label")
+				.html(labelAttribute);
+			var countyName = infolabel.append("div")
+				.attr("class", "labelname")
+				.html(props.name);	
+		};
 	};
-	
 	//function to move info label with mouse
 	function moveLabel(){
 		//get width of label
@@ -409,16 +511,17 @@
 			.node()
 			.getBoundingClientRect()
 			.width;
+		
 		//use coordinates of mousemove event to set label coordinates
 		var x1 = d3.event.clientX + 10,
-			y1 = d3.event.clientY - 75,
+			y1 = d3.event.clientY  - 20,
 			x2 = d3.event.clientX - labelWidth - 10,
-			y2 = d3.event.clientY + 25;
+			y2 = d3.event.clientY + 10;
 			
 		//horizontal label coordinate, testing for overflow
 		var x = d3.event.clientX > window.innerWidth - labelWidth - 20 ? x2 : x1; 
 		//vertical label coordinate, testing for overflow
-		var y = d3.event.clientY < 75 ? y2 : y1; 
+		var y = d3.event.clientY < 50 ? y2 : y1; 
 
 		d3.select(".infolabel")
 			.style("left", x + "px")

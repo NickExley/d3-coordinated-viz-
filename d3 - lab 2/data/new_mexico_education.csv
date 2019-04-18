@@ -1,4 +1,4 @@
-County,CountyFP,Highschool Graduation Rate,Highschool Graduate Median Earnings,College Graduation Rate,College Graduate Median Earnings,Graduate Degree Rate,Grad School Graduate Median Earnings
+NAME,COUNTYFP,Highschool Graduation Rate,Highschool Graduate Median Earnings,College Degree Percentage,College Graduate Median Earnings,Graduate Degree Percentage,Grad School Graduate Median Earnings
 Bernalillo,1,88.5,27005,33.4,44748,15.1,60655
 Catron,3,95.2,26667,25.8,24732,8.7,51667
 Chaves,5,78.3,26174,19,46373,6.5,52219
@@ -10,7 +10,7 @@ Dona Ana,13,79.2,21603,27.4,40273,11.3,55481
 Eddy,15,84.8,38678,16.2,51745,6.4,61332
 Grant,17,87.2,25810,27,37063,11.9,46016
 Guadalupe,19,77.7,18205,13.1,35221,5.4,50625
-Harding,21,89.7,28672,24,-666,3.9,-666
+Harding,21,89.7,28672,24,0,3.9,0
 Hidalgo,23,78.9,21563,14.4,19531,4.9,50357
 Lea,25,72.9,36706,13.1,47283,5.2,60875
 Lincoln,27,91.4,24408,29.6,40189,9.8,42326
